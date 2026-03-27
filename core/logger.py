@@ -7,16 +7,21 @@ import sys
 from pathlib import Path
 import settings
 
+# Ensure logs directory exists
+settings.ensure_directories()
+
 # Remove default handler
 logger.remove()
 
 # Console handler (INFO and above)
-logger.add(
-    sys.stderr,
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | <level>{message}</level>",
-    level="INFO",
-    colorize=True
-)
+# In some environments (like xlwings non-debug), sys.stderr can be None
+if sys.stderr:
+    logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | <level>{message}</level>",
+        level="INFO",
+        colorize=True
+    )
 
 # File handler (all logs)
 logger.add(

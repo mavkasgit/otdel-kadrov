@@ -92,10 +92,8 @@ class ExcelDatabase:
     
     def _verify_sheets(self) -> None:
         """
-        Verify that all required sheets exist in workbook
-        
-        Raises:
-            SheetNotFoundError: If required sheet is missing
+        Verify that all required sheets exist in the workbook.
+        If a required sheet is missing, it will be created automatically.
         """
         required_sheets = [
             settings.SHEET_EMPLOYEES,
@@ -105,15 +103,14 @@ class ExcelDatabase:
         ]
         
         existing_sheets = [sheet.name for sheet in self.workbook.sheets]
-        logger.debug(f"Existing sheets: {existing_sheets}")
+        logger.debug(f"Verifying sheets. Required: {required_sheets}. Existing: {existing_sheets}")
         
         for sheet_name in required_sheets:
             if sheet_name not in existing_sheets:
-                error_msg = f"Required sheet '{sheet_name}' not found in workbook"
-                logger.error(error_msg)
-                raise SheetNotFoundError(error_msg)
+                logger.warning(f"Required sheet '{sheet_name}' not found. Creating it now.")
+                self.workbook.sheets.add(sheet_name)
         
-        logger.debug("All required sheets verified")
+        logger.info("All required sheets verified or created.")
     
     def _cache_sheets(self) -> None:
         """Cache references to frequently used sheets"""

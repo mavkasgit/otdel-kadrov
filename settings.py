@@ -2,22 +2,24 @@
 HRMS System Configuration
 Конфигурация системы управления персоналом
 """
+import os
 from pathlib import Path
 
 # Base paths
-BASE_DIR = Path(__file__).parent
-EXCEL_FILE = BASE_DIR / "otdel-kadrov.xlsm"
+BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+EXCEL_FILE = BASE_DIR / "otdel_kadrov.xlsm"
 TEMPLATES_DIR = BASE_DIR / "templates"
 REPORTS_DIR = BASE_DIR / "приказы"  # RUSSIAN: orders
 LOGS_DIR = BASE_DIR / "logs"
-
-# Create directories if they don't exist
-REPORTS_DIR.mkdir(exist_ok=True)
-LOGS_DIR.mkdir(exist_ok=True)
-
-# Personal files
 PERSONAL_FILES_DIR = BASE_DIR / "личные_дела"  # RUSSIAN: personal files
-PERSONAL_FILES_DIR.mkdir(exist_ok=True)
+
+
+def ensure_directories():
+    """Create required directories if they don't exist"""
+    REPORTS_DIR.mkdir(exist_ok=True)
+    LOGS_DIR.mkdir(exist_ok=True)
+    PERSONAL_FILES_DIR.mkdir(exist_ok=True)
+    TEMPLATES_DIR.mkdir(exist_ok=True)
 
 # Alert thresholds
 CONTRACT_ALERT_MONTHS_AHEAD = 3  # Show all contracts expiring in next 2-3 months
