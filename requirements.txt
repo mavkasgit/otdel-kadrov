@@ -1,0 +1,31 @@
+# Core dependencies
+# Python 3.10+
+
+# Excel integration
+xlwings>=0.30.0
+openpyxl>=3.1.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# GUI
+customtkinter>=5.2.0
+Pillow>=10.0.0
+
+# Document generation
+docxtpl>=0.16.0
+python-docx>=0.8.11
+
+# Logging
+loguru>=0.7.0
+
+# Testing (optional)
+pytest>=7.4.0
+pytest-cov>=4.1.0
+hypothesis>=6.82.0
+
+# Development (optional)
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.4.0
