@@ -1,6 +1,23 @@
+import os
+import sys
+import traceback
+
+# Добавляем путь к корневой папке
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import xlwings as xw
 from tkinter import Tk, Label, Button, ttk, StringVar, messagebox
-import traceback
+import settings
+
+
+def center_window(window, width, height):
+    screen_width = window.winfo_screenwidth()
+    screen_height = window.winfo_screenheight()
+    x = (screen_width - width) // 2
+    y = (screen_height - height) // 2
+    window.geometry(f"{width}x{height}+{x}+{y}")
 
 def show_employee_selector():
     '''Показывает окно с выпадающим списком сотрудников'''
@@ -11,7 +28,7 @@ def show_employee_selector():
             wb = xw.Book.caller()
         except:
             # Если не получилось, открываем файл напрямую
-            wb = xw.Book('otdel-kadrov.xlsm')
+            wb = xw.Book(settings.EXCEL_FILE)
         
         # Пытаемся найти лист "Сотрудники"
         employee_sheet = None
@@ -35,7 +52,7 @@ def show_employee_selector():
         # Создаем GUI окно
         root = Tk()
         root.title("Выбор сотрудника")
-        root.geometry("400x200")
+        center_window(root, 400, 200)
         
         selected_employee = StringVar()
         

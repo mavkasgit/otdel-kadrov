@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Excel temporary files
+~$*.xls*
+~$*.xlsm
+
+# Personal files (содержат личные данные сотрудников)
+личные_дела/
+personal_files/
+
+# Generated orders (могут содержать конфиденциальную информацию)
+приказы/
+reports/
+
+# Excel database (содержит данные сотрудников - НЕ коммитить!)
+otdel_kadrov.xlsm
+otdel-kadrov.xlsm
+*.xlsm
+*.xlsx
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+
+# Test files
+test_*.py
+*_test.py

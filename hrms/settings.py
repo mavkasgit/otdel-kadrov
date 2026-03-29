@@ -7,11 +7,13 @@ from pathlib import Path
 
 # Base paths
 BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
-EXCEL_FILE = BASE_DIR / "otdel_kadrov.xlsm"
+PARENT_DIR = BASE_DIR.parent
+
+EXCEL_FILE = str(PARENT_DIR / "Отдел Кадров.xlsm")
 TEMPLATES_DIR = BASE_DIR / "templates"
-REPORTS_DIR = BASE_DIR / "приказы"  # RUSSIAN: orders
+REPORTS_DIR = PARENT_DIR / "приказы"
 LOGS_DIR = BASE_DIR / "logs"
-PERSONAL_FILES_DIR = BASE_DIR / "личные_дела"  # RUSSIAN: personal files
+PERSONAL_FILES_DIR = PARENT_DIR / "личные_дела"
 
 
 def ensure_directories():

@@ -49,8 +49,14 @@ class ExcelDatabase:
         try:
             # Use caller workbook if launched from Excel, otherwise open file
             if self.workbook_path is None:
-                logger.info("Connecting to caller workbook (launched from Excel)")
-                self.workbook = xw.Book.caller()
+                try:
+                    logger.info("Connecting to caller workbook (launched from Excel)")
+                    self.workbook = xw.Book.caller()
+                except Exception:
+                    # Fallback: открываем файл напрямую (для отладки из консоли)
+                    import settings
+                    logger.info(f"Fallback: opening workbook directly: {settings.EXCEL_FILE}")
+                    self.workbook = xw.Book(settings.EXCEL_FILE)
             else:
                 logger.info(f"Opening workbook: {self.workbook_path}")
                 self.workbook = xw.Book(self.workbook_path)
@@ -161,7 +167,7 @@ class ExcelDatabase:
         for col in date_columns:
             if col in df.columns:
                 try:
-                    df[col] = pd.to_datetime(df[col], errors='coerce')
+                    df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
                     logger.debug(f"Converted column '{col}' to datetime")
                 except Exception as e:
                     logger.warning(f"Failed to convert column '{col}' to datetime: {e}")

@@ -11,6 +11,7 @@ numpy>=1.24.0
 
 # GUI
 customtkinter>=5.2.0
+ttkbootstrap>=1.10.0
 Pillow>=10.0.0
 
 # Document generation
