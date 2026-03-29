@@ -569,3 +569,38 @@ class ExcelDatabase:
         if code is None:
             raise ValueError(f"Unknown order type: {order_type}")
         return code
+
+    def get_next_order_number(self, order_type: str) -> str:
+        """
+        Получение следующего номера для типа приказа
+        
+        Args:
+            order_type: Тип события (например "Прием на работу")
+            
+        Returns:
+            Следующий номер, например "001-П"
+            
+        Raises:
+            ValueError: Если тип события не найден в справочнике
+        """
+        import re
+        
+        type_code = self._get_type_code(order_type)
+        
+        df = self.get_order_log(order_type)
+        
+        if df.empty:
+            next_num = 1
+        else:
+            numbers = []
+            for order_num in df["Номер приказа"]:
+                match = re.match(r'(\d+)-', str(order_num))
+                if match:
+                    numbers.append(int(match.group(1)))
+            
+            if numbers:
+                next_num = max(numbers) + 1
+            else:
+                next_num = 1
+        
+        return f"{next_num:03d}-{type_code}"
