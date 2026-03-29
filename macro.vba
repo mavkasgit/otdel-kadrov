@@ -1,13 +1,35 @@
-Sub SortEmployees()
-    RunPython "import sort_employees; sort_employees.show_employee_selector()"
-End Sub
+' HRMS System - VBA Macros
+' Простой запуск Python без xlwings add-in
 
-' Test infrastructure
-Sub TestInfrastructure()
-    RunPython "import test_infrastructure; test_infrastructure.main()"
-End Sub
+Public Const PYTHON_EXE = ".venv\Scripts\python.exe"
+Public Const PROJECT_PATH = "D:\KTM\Excel\otdel-kadrov-xlwing"
 
-' Launch HRMS GUI (будет реализовано позже)
 Sub LaunchHRMS()
-    RunPython "import main; main.run()"
+    ' Получаем путь к текущей книге
+    Dim wb As Workbook
+    Set wb = ThisWorkbook
+    Dim filePath As String
+    filePath = wb.FullName
+    
+    ' Запуск HRMS с передачей пути к файлу
+    Dim cmd As String
+    cmd = PYTHON_EXE & " """ & PROJECT_PATH & "\main.py"" """ & filePath & """"
+    
+    Shell cmd, 1
+End Sub
+
+Sub TestInfrastructure()
+    ' Тест инфраструктуры
+    Dim cmd As String
+    cmd = PYTHON_EXE & " """ & PROJECT_PATH & "\test_infrastructure.py"""
+    
+    Shell cmd, 1
+End Sub
+
+Sub SortEmployees()
+    ' Сортировка сотрудников
+    Dim cmd As String
+    cmd = PYTHON_EXE & " """ & PROJECT_PATH & "\sort_employees.py"""
+    
+    Shell cmd, 1
 End Sub
