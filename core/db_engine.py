@@ -509,3 +509,45 @@ class ExcelDatabase:
         except Exception as e:
             logger.error(f"Error deleting vacation: {e}")
             raise DatabaseConnectionError(f"Error deleting vacation: {str(e)}") from e
+
+    def get_order_log(self, order_type: Optional[str] = None) -> pd.DataFrame:
+        """
+        Чтение журнала приказов
+        
+        Args:
+            order_type: Опциональный фильтр по типу события
+            
+        Returns:
+            DataFrame с записями журнала
+        """
+        try:
+            sheet = self._get_sheet(settings.SHEET_ORDER_LOG)
+            logger.debug(f"Reading order log from sheet: {settings.SHEET_ORDER_LOG}")
+            
+            used_range = sheet.used_range
+            data = used_range.value
+            
+            if not data or len(data) < 2:
+                logger.warning("Order log sheet is empty")
+                return pd.DataFrame(columns=settings.ORDER_LOG_COLUMNS)
+            
+            headers = data[0]
+            rows = data[1:]
+            
+            df = pd.DataFrame(rows, columns=headers)
+            
+            if "Дата создания" in df.columns:
+                df = self._convert_dates(df, ["Дата создания"])
+            
+            df = df.where(pd.notna(df), None)
+            
+            if order_type and "Тип события" in df.columns:
+                df = df[df["Тип события"] == order_type]
+                logger.debug(f"Filtered by order type: {order_type}, rows: {len(df)}")
+            
+            logger.info(f"Retrieved {len(df)} order log entries")
+            return df
+            
+        except Exception as e:
+            logger.error(f"Error reading order log: {e}")
+            raise DatabaseConnectionError(f"Error reading order log: {str(e)}") from e
