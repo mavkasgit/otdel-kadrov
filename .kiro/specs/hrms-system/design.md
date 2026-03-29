@@ -17,7 +17,7 @@ HRMS System представляет собой полнофункциональ
 - **xlwings**: Двунаправленная интеграция с Excel (запуск ТОЛЬКО из Excel через VBA)
 - **pandas**: Обработка и анализ данных
 - **openpyxl**: Чтение .xlsx без Excel
-- **customtkinter**: Современный GUI
+- **ttkbootstrap**: Современный GUI с поддержкой тем (используется тема "yeti")
 - **docxtpl**: Генерация Word документов
 - **loguru**: Структурированное логирование
 - **Pillow**: Обработка изображений для GUI
@@ -47,7 +47,7 @@ HRMS System представляет собой полнофункциональ
 graph TB
     subgraph "User Layer"
         Excel[Excel Workbook<br/>otdel-kadrov.xlsm]
-        GUI[GUI Application<br/>customtkinter]
+        GUI[GUI Application<br/>ttkbootstrap]
     end
     
     subgraph "Application Layer"
@@ -64,7 +64,8 @@ graph TB
     
     subgraph "UI Layer"
         Styles[styles.py<br/>Theme & Colors]
-        Widgets[widgets.py<br/>Reusable Components]
+        Components[components/<br/>Date Picker, etc.]
+        Widgets[widgets.py<br/>Reusable Layouts]
         Dashboard[dashboard.py<br/>Main View]
         EmployeeCard[employee_card.py<br/>Detail View]
         VacationMgr[vacation_mgr.py<br/>Vacation Management]
@@ -94,7 +95,8 @@ graph TB
     EmployeeCard --> Widgets
     VacationMgr --> Widgets
     
-    Widgets --> Styles
+    Widgets --> Components
+    Components --> Styles
     Dashboard --> Analytics
     Dashboard --> Validator
     EmployeeCard --> Analytics
@@ -130,12 +132,15 @@ hrms-system/
 │   └── doc_generator.py   # Document generation from templates
 ├── ui/                    # Frontend modules
 │   ├── __init__.py
-│   ├── styles.py          # UI theme and styling
-│   ├── widgets.py         # Reusable UI components
+│   ├── styles.py          # Theme and styling based on ttkbootstrap
+│   ├── components/        # Specialized interactive components
+│   │   ├── __init__.py
+│   │   └── date_picker.py # Localized, RU/MON-first DatePicker
+│   ├── widgets.py         # Reusable dashboard widgets
 │   └── views/
 │       ├── __init__.py
 │       ├── dashboard.py   # Main dashboard view
-│       ├── employee_card.py  # Employee detail/edit view
+│       ├── employee_card.py  # Employee detail view
 │       ├── vacation_mgr.py   # Vacation management view
 │       └── order_generator.py # Order generation view
 ├── templates/             # Word document templates (user-provided)
@@ -200,6 +205,7 @@ class ExcelDatabase:
     def get_references(self) -> dict
     def get_next_order_number(self, order_type: str) -> str
     def save_order_number(self, order_type: str, order_number: str) -> None
+    def add_order_log(self, order_data: dict) -> str  # Records order details to Excel
     def refresh_data(self)
 ```
 
@@ -1415,7 +1421,7 @@ pandas>=2.0.0
 numpy>=1.24.0
 
 # GUI
-customtkinter>=5.2.0
+ttkbootstrap>=1.10.0
 Pillow>=10.0.0
 
 # Document generation
@@ -1496,6 +1502,6 @@ format_order_number(order_type: str, number: int) -> str
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: 2024-06-15  
+**Document Version**: 1.1  
+**Last Updated**: 2026-03-30  
 **Status**: Ready for Implementation

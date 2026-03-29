@@ -4,6 +4,10 @@
 ~$*.xls*
 ~$*.xlsm
 
+# Personal data folders
+личные_дела/
+приказы/
+
 # Python
 __pycache__/
 *.py[cod]
