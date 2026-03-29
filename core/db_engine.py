@@ -604,3 +604,44 @@ class ExcelDatabase:
                 next_num = 1
         
         return f"{next_num:03d}-{type_code}"
+
+    def find_employee(self, search_value: str) -> Optional[Dict]:
+        """
+        Единый поиск сотрудника по ФИО или Таб.№
+        
+        Args:
+            search_value: Строка поиска (ФИО или Таб.№)
+            
+        Returns:
+            Dict с данными сотрудника или None если не найден
+        """
+        try:
+            df = self.get_employees()
+            
+            if df.empty:
+                return None
+            
+            try:
+                tab_num = int(search_value)
+                matches = df[df["Таб. №"] == tab_num]
+                
+                if not matches.empty:
+                    return matches.iloc[0].to_dict()
+            except ValueError:
+                pass
+            
+            search_lower = search_value.lower().strip()
+            matches = df[df["ФИО"].astype(str).str.lower().str.contains(search_lower, na=False)]
+            
+            if matches.empty:
+                logger.warning(f"Employee not found: {search_value}")
+                return None
+            
+            if len(matches) > 1:
+                logger.warning(f"Multiple matches for '{search_value}': {len(matches)} found, using first")
+            
+            return matches.iloc[0].to_dict()
+            
+        except Exception as e:
+            logger.error(f"Error searching employee '{search_value}': {e}")
+            return None
