@@ -5,22 +5,68 @@ HRMS - Генератор приказов
 import os
 import sys
 import ctypes
+import pandas as pd
 
 myappid = 'hrms.otdelkadrov'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 import xlwings as xw
 import ttkbootstrap as ttk
+import tkinter as tk
+from ui.components.date_picker import CustomDateEntry
 from ttkbootstrap.constants import *
-from tkinter import messagebox, StringVar, Text, Frame, Label, Entry, Radiobutton, Button, LabelFrame
+from tkinter import messagebox, StringVar, Text, END
+from tkinter import Listbox as TkListbox
 from datetime import datetime
+import locale
 
 from core.db_engine import ExcelDatabase
+from core.doc_generator import DocumentGenerator
 import settings
+import json
+
+
+def format_date_with_weekday(date_obj):
+    """Формат даты: понедельник, 30 марта 2026 г."""
+    weekdays = {
+        0: "понедельник",
+        1: "вторник",
+        2: "среда",
+        3: "четверг",
+        4: "пятница",
+        5: "суббота",
+        6: "воскресенье"
+    }
+    months = {
+        1: "января", 2: "февраля", 3: "марта", 4: "апреля",
+        5: "мая", 6: "июня", 7: "июля", 8: "августа",
+        9: "сентября", 10: "октября", 11: "ноября", 12: "декабря"
+    }
+    wd = weekdays[date_obj.weekday()]
+    month = months[date_obj.month]
+    return f"{wd}, {date_obj.day} {month} {date_obj.year} г."
+
+
+def parse_date_with_weekday(date_str):
+    """Парсинг даты из формата с днём недели"""
+    import re
+    match = re.search(r'(\d+)\s+(\w+)\s+(\d+)', date_str)
+    if match:
+        day = int(match.group(1))
+        year = int(match.group(3))
+        month_map = {
+            "января": 1, "февраля": 2, "марта": 3, "апреля": 4,
+            "мая": 5, "июня": 6, "июля": 7, "августа": 8,
+            "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12
+        }
+        month_name = match.group(2)
+        month = month_map.get(month_name, 1)
+        return datetime(year, month, day)
+    return datetime.now()
 
 
 def center_window(window, width, height):
@@ -35,15 +81,20 @@ class OrderGeneratorDialog:
     """Диалог генерации приказов"""
     
     def __init__(self, parent=None):
-        self.root = ttk.Window(themename="yeti") if parent is None else ttk.Window(parent, themename="yeti")
+        if parent:
+            self.root = ttk.Toplevel(parent)
+        else:
+            self.root = ttk.Window(themename="yeti")
+            
         self.root.title("Генератор приказов")
-        center_window(self.root, 600, 700)
+        center_window(self.root, 1000, 750)
         
         try:
-            from PIL import Image, ImageTk
-            icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "icon.ico")
+            icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "icon.png")
             icon_path = os.path.abspath(icon_path)
-            self.root.iconbitmap(icon_path)
+            icon_img = Image.open(icon_path)
+            self._icon = ImageTk.PhotoImage(icon_img)
+            self.root.iconphoto(True, self._icon)
         except Exception as e:
             print(f"Icon error: {e}")
         
@@ -51,22 +102,117 @@ class OrderGeneratorDialog:
         self.order_type = StringVar(value="Прием на работу")
         self.order_number_var = StringVar()
         self.employees_list = []
+        self.employee_buttons = {}
+        self.selected_employee = None
+        self.selected_button = None
         
+        self._load_pane_pos()
         self.setup_ui()
         self.load_employees()
         
-        self.root.mainloop()
+        if not parent:
+            self.root.mainloop()
+    
+    def _save_pane_pos(self, paned):
+        """Сохранение позиции разделителя"""
+        try:
+            self.root.after(100, lambda: self._do_save_pane(paned))
+        except:
+            pass
+    
+    def _do_save_pane(self, paned):
+        """Сохранение позиции после задержки"""
+        try:
+            pos = paned.sash_coord(0)[0]
+            settings.ORDER_GEN_PANE_POS = int(pos)
+            config_path = os.path.join(os.path.dirname(__file__), "..", "..", "settings.json")
+            with open(config_path, "w") as f:
+                json.dump({"order_gen_pane_pos": int(pos)}, f)
+        except:
+            pass
+    
+    def _load_pane_pos(self):
+        """Загрузка позиции разделителя"""
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), "..", "..", "settings.json")
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    data = json.load(f)
+                    settings.ORDER_GEN_PANE_POS = data.get("order_gen_pane_pos")
+        except:
+            pass
     
     def setup_ui(self):
-        """Настройка интерфейса"""
-        main_frame = Frame(self.root)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        header = ttk.Frame(self.root, bootstyle=PRIMARY)
+        header.pack(fill="x")
         
-        # Заголовок
-        Label(main_frame, text="Создание приказа", font=("Arial", 14, "bold")).pack(pady=10)
+        ttk.Label(header, text="Генератор приказов", font=("Segoe UI", 16, "bold"),
+                 bootstyle="inverse-primary").pack(pady=15)
         
-        # Выбор типа приказа
-        Label(main_frame, text="Тип приказа:", font=("Arial", 11, "bold")).pack(pady=5)
+        paned = tk.PanedWindow(self.root, orient="horizontal", sashwidth=10, bg="#CCCCCC")
+        paned.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        left_frame = ttk.LabelFrame(paned, text="Сотрудники")
+        paned.add(left_frame, minsize=350, stretch="always")
+        
+        right_frame = ttk.LabelFrame(paned, text="Тип приказа")
+        paned.add(right_frame, minsize=350, stretch="always")
+        
+        def set_initial_sash():
+            try:
+                if settings.ORDER_GEN_PANE_POS:
+                    paned.sash_place(0, int(settings.ORDER_GEN_PANE_POS), 0)
+                else:
+                    paned.sash_place(0, 480, 0)
+            except:
+                pass
+                
+        self.root.after(100, set_initial_sash)
+        
+        paned.bind("<ButtonRelease-1>", lambda e: self._save_pane_pos(paned))
+        
+        self.paned = paned
+        
+        self.search_var = StringVar()
+        search_entry = ttk.Entry(left_frame, textvariable=self.search_var)
+        search_entry.pack(pady=5, padx=10, fill="x")
+        search_entry.focus()
+        
+        self.search_entry = search_entry
+        search_entry.bind("<KeyRelease>", self.on_search_change)
+        
+        # Сначала пакуем нижние элементы (dock to bottom)
+        bottom_frame = ttk.Frame(left_frame)
+        bottom_frame.pack(side="bottom", fill="x", pady=10)
+        
+        self.status_label = ttk.Label(bottom_frame, text="", bootstyle=INFO)
+        self.status_label.pack(side="bottom", pady=2)
+        
+        btn_frame = ttk.Frame(bottom_frame)
+        btn_frame.pack(side="bottom", fill="x")
+        
+        ttk.Button(btn_frame, text="Создать приказ", command=self.generate_order,
+                  bootstyle=SUCCESS, padding=(15, 8)).pack(side="left", padx=5, expand=True, fill="x")
+        ttk.Button(btn_frame, text="Закрыть", command=self.root.destroy,
+                  padding=(15, 8)).pack(side="left", padx=5, expand=True, fill="x")
+        
+        self.selected_info = ttk.Label(left_frame, text="Выбран: None", 
+                                       font=("Segoe UI", 10, "bold"), foreground="red")
+        self.selected_info.pack(side="bottom", pady=5)
+        
+        # И только теперь пакуем список, чтобы он занимал оставшееся место (dock to top/fill)
+        listbox_frame = ttk.Frame(left_frame)
+        listbox_frame.pack(side="top", fill="both", expand=True, pady=5)
+        
+        scroll = ttk.Scrollbar(listbox_frame)
+        scroll.pack(side="right", fill="y")
+        
+        self.employee_listbox = TkListbox(listbox_frame, yscrollcommand=scroll.set, 
+                                        font=("Segoe UI", 10))
+        self.employee_listbox.pack(side="left", fill="both", expand=True)
+        scroll.config(command=self.employee_listbox.yview)
+        
+        self.employee_listbox.bind("<<ListboxSelect>>", self.on_employee_select)
         
         order_types = [
             "Прием на работу",
@@ -79,50 +225,81 @@ class OrderGeneratorDialog:
         ]
         
         for ot in order_types:
-            Radiobutton(main_frame, text=ot, variable=self.order_type, 
-                       value=ot, command=self.on_type_changed).pack(anchor="w", padx=20)
+            btn = ttk.Radiobutton(right_frame, text=ot, variable=self.order_type, value=ot,
+                                  bootstyle="success-toolbutton")
+            btn.pack(pady=2, fill="x", padx=10)
+            self.employee_buttons[ot] = btn
         
-        # Выбор сотрудника
-        Label(main_frame, text="\nВыберите сотрудника:", font=("Arial", 11, "bold")).pack(pady=5)
+        self.order_type.set("Прием на работу")
+        self.order_type.trace("w", self.on_type_click)
         
-        self.employee_var = StringVar()
-        self.employee_combo = ttk.Combobox(main_frame, textvariable=self.employee_var,
-                                           state="readonly", width=40)
-        self.employee_combo.pack(pady=5)
+        form_frame = ttk.Frame(right_frame)
+        form_frame.pack(fill="x", pady=10)
         
-        # Дата приказа
-        Label(main_frame, text="\nДата приказа:", font=("Arial", 11, "bold")).pack(pady=5)
+        try:
+            locale.setlocale(locale.LC_TIME, 'ru_RU')
+        except locale.Error:
+            pass
         
-        self.date_entry = Entry(main_frame, width=20)
-        self.date_entry.pack(pady=5)
-        self.date_entry.insert(0, datetime.now().strftime("%d.%m.%Y"))
+        ttk.Label(form_frame, text="Дата приказа:").grid(row=0, column=0, sticky="w", pady=5, padx=10)
+        self.date_entry = CustomDateEntry(form_frame, width=20, popup_coords=(1200 , 600))
+        self.date_entry.grid(row=0, column=1, sticky="w", pady=5, padx=10)
         
-        # Номер приказа (авто)
-        Label(main_frame, text="\nНомер приказа:", font=("Arial", 11, "bold")).pack(pady=5)
+        ttk.Label(form_frame, text="Номер:").grid(row=1, column=0, sticky="w", pady=5, padx=10)
+        self.order_number_entry = ttk.Entry(form_frame, textvariable=self.order_number_var, font=("Segoe UI", 11, "bold"), foreground="blue")
+        self.order_number_entry.grid(row=1, column=1, sticky="w", pady=5, padx=10)
         
-        Label(main_frame, textvariable=self.order_number_var, 
-              font=("Arial", 12), fg="blue").pack(pady=5)
+        recent_frame = ttk.LabelFrame(right_frame, text="Последние 5 приказов")
+        recent_frame.pack(fill="both", expand=True, pady=10, padx=10)
         
-        # Дополнительные поля
-        self.extra_frame = LabelFrame(main_frame, text="Дополнительно", padx=10, pady=10)
-        self.extra_frame.pack(fill="x", pady=10)
+        columns = ("number", "fio", "date", "type")
+        self.recent_tree = ttk.Treeview(recent_frame, columns=columns, show="headings", height=5)
+        self.recent_tree.heading("number", text="Номер приказа")
+        self.recent_tree.column("number", width=90)
+        self.recent_tree.heading("fio", text="ФИО")
+        self.recent_tree.column("fio", width=120)
+        self.recent_tree.heading("date", text="Дата")
+        self.recent_tree.column("date", width=80)
+        self.recent_tree.heading("type", text="Тип")
+        self.recent_tree.column("type", width=100)
+        self.recent_tree.pack(fill="both", expand=True, padx=5, pady=5)
         
-        self.extra_text = Text(self.extra_frame, height=5, width=50)
-        self.extra_text.pack()
+        extra_frame = ttk.LabelFrame(right_frame, text="Дополнительно")
+        extra_frame.pack(fill="x", pady=10, padx=10)
         
-        # Кнопки
-        btn_frame = Frame(main_frame)
-        btn_frame.pack(pady=15)
+        self.extra_text = Text(extra_frame, height=4)
+        self.extra_text.pack(fill="both", expand=True, padx=5, pady=5)
+    
+    def on_search_change(self, event=None):
+        """Поиск сотрудников"""
+        search_text = self.search_var.get().lower().strip()
         
-        Button(btn_frame, text="Создать приказ", command=self.generate_order,
-               bg="#4CAF50", fg="white", padx=20).pack(side="left", padx=5)
+        self.employee_listbox.delete(0, "end")
         
-        Button(btn_frame, text="Закрыть", command=self.root.destroy,
-               padx=20).pack(side="left", padx=5)
+        if not search_text:
+            self.refresh_employee_list()
+            return
         
-        # Статус
-        self.status_label = Label(main_frame, text="", fg="blue")
-        self.status_label.pack(pady=5)
+        for tab, name in self.employees_list:
+            search_str = f"{int(tab)} {name}".lower()
+            if search_text in search_str:
+                self.employee_listbox.insert("end", f"{int(tab)} - {name}")
+    
+    def on_employee_select(self, event):
+        """Выбор сотрудника из списка"""
+        selection = self.employee_listbox.curselection()
+        if selection:
+            selected = self.employee_listbox.get(selection[0])
+            tab_str = selected.split(" - ")[0]
+            self.selected_employee = int(float(tab_str))
+            
+            name = selected.split(" - ")[1]
+            self.selected_info.config(text=f"Выбран: {int(tab_str)} - {name}", foreground="green")
+    
+    def on_type_click(self, *args):
+        """Выбор типа приказа"""
+        order_type = self.order_type.get()
+        self.update_order_number()
     
     def load_employees(self):
         """Загрузка списка сотрудников"""
@@ -136,19 +313,35 @@ class OrderGeneratorDialog:
             self.db.connect()
             
             employees = self.db.get_employees()
-            self.employees_list = [(row["Таб. №"], row["ФИО"]) for _, row in employees.iterrows()]
             
-            self.employee_combo["values"] = [f"{tab} - {name}" for tab, name in self.employees_list]
+            self.employees_list = []
+            for _, row in employees.iterrows():
+                tab_num = row["Таб. №"]
+                if tab_num and not pd.isna(tab_num):
+                    try:
+                        tab_int = int(float(tab_num))
+                        name = row["ФИО"]
+                        if name and not pd.isna(name):
+                            self.employees_list.append((tab_int, name))
+                    except:
+                        pass
             
-            # Загружаем номер приказа
+            self.employees_list.sort(key=lambda x: x[1])
+            
+            self.refresh_employee_list()
             self.update_order_number()
+            self.refresh_recent_orders()
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             messagebox.showerror("Ошибка", f"Не удалось загрузить:\n{e}")
     
-    def on_type_changed(self):
-        """При изменении типа приказа"""
-        self.update_order_number()
+    def refresh_employee_list(self):
+        """Обновить список сотрудников"""
+        self.employee_listbox.delete(0, "end")
+        for tab, name in self.employees_list:
+            self.employee_listbox.insert("end", f"{int(tab)} - {name}")
     
     def update_order_number(self):
         """Обновить номер приказа"""
@@ -164,56 +357,110 @@ class OrderGeneratorDialog:
     
     def generate_order(self):
         """Создать приказ"""
-        if not self.employee_var.get():
+        if self.selected_employee is None:
             messagebox.showwarning("Внимание", "Выберите сотрудника")
             return
         
-        if not self.date_entry.get():
+        if not self.date_entry.entry.get():
             messagebox.showwarning("Внимание", "Укажите дату")
             return
         
         try:
-            tab_str = self.employee_var.get().split(" - ")[0]
-            tab_number = int(tab_str)
+            tab_number = self.selected_employee
             
-            order_date = datetime.strptime(self.date_entry.get(), "%d.%m.%Y")
+            order_date = self.date_entry.entry.get()
+            order_date = datetime.strptime(order_date, "%d.%m.%Y")
             order_type = self.order_type.get()
+            
+            if not order_type:
+                messagebox.showwarning("Внимание", "Выберите тип приказа")
+                return
+            
             order_number = self.order_number_var.get()
             
-            # Получить данные сотрудника
             employees = self.db.get_employees()
-            emp = employees[employees["Таб. №"] == tab_number].iloc[0]
+            emp_matches = employees[employees["Таб. №"] == tab_number]
             
-            # Записать в журнал приказов
+            if emp_matches.empty:
+                messagebox.showerror("Ошибка", f"Сотрудник с табельным № {tab_number} не найден в базе.")
+                return
+                
+            emp = emp_matches.iloc[0]
+            emp_dict = emp.to_dict()
+            
+            doc_gen = DocumentGenerator()
+            file_path = doc_gen.generate_order(order_type, emp_dict, order_number, order_date)
+            
+            # Сохранение лога в Excel
             order_data = {
+                "order_type": order_type,
+                "tab_number": tab_number,
                 "Номер приказа": order_number,
-                "Тип события": order_type,
                 "Дата создания": order_date,
-                "ФИО": emp.get("ФИО", ""),
-                "Таб. №": tab_number,
-                "Путь к файлу": ""
+                "Путь к файлу": file_path
             }
             
             self.db.add_order_log(order_data)
             
-            # Обновить счётчик
-            self.db.save_order_number(order_type)
-            
-            messagebox.showinfo("Успех", f"Приказ {order_number} создан!\n\nЗаписан в журнал приказов.")
-            
             self.status_label.config(text=f"Приказ {order_number} создан")
-            
-            # Обновить номер для следующего приказа
             self.update_order_number()
+            self.refresh_recent_orders()
+            
+            if messagebox.askyesno("Успех", f"Приказ {order_number} успешно создан!\n\nФайл: {file_path}\n\nОткрыть файл сейчас?"):
+                import os
+                os.startfile(file_path)
             
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось создать приказ:\n{e}")
             import traceback
             traceback.print_exc()
 
+    def refresh_recent_orders(self):
+        """Обновление списка последних 5 приказов"""
+        if self.db is None or not hasattr(self, 'recent_tree'):
+            return
+            
+        for item in self.recent_tree.get_children():
+            self.recent_tree.delete(item)
+            
+        try:
+            df = self.db.get_order_log()
+            if df.empty:
+                return
+                
+            # Get last 5 reverse order
+            recent = df.tail(5).iloc[::-1]
+            
+            for _, row in recent.iterrows():
+                date_val = row.get("Дата создания")
+                if pd.notna(date_val) and hasattr(date_val, "strftime"):
+                    date_str = date_val.strftime("%d.%m.%Y")
+                else:
+                    date_str = str(date_val) if pd.notna(date_val) else ""
+                    
+                num_str = str(row.get("Номер приказа", ""))
+                type_str = str(row.get("Тип события", ""))
+                fio_str = str(row.get("ФИО", ""))
+                
+                if num_str == "nan": num_str = ""
+                if type_str == "nan": type_str = ""
+                if fio_str == "nan": fio_str = ""
+                
+                # Format FIO
+                fio_clean = fio_str.strip()
+                if fio_clean:
+                    fio_parts = fio_clean.split()
+                    if len(fio_parts) >= 3:
+                        fio_str = f"{fio_parts[0]} {fio_parts[1][0]}.{fio_parts[2][0]}."
+                    elif len(fio_parts) == 2:
+                        fio_str = f"{fio_parts[0]} {fio_parts[1][0]}."
+                
+                self.recent_tree.insert("", "end", values=(num_str, fio_str, date_str, type_str))
+        except Exception as e:
+            pass
+
 
 def main():
-    """Точка входа"""
     try:
         app = OrderGeneratorDialog()
     except Exception as e:

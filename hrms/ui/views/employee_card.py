@@ -8,7 +8,7 @@ import ctypes
 myappid = 'hrms.otdelkadrov'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -16,6 +16,7 @@ import xlwings as xw
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from tkinter import messagebox, StringVar
+from PIL import Image, ImageTk
 from datetime import datetime
 
 from core.db_engine import ExcelDatabase
@@ -39,14 +40,20 @@ def get_icon_path():
 class EmployeeCardDialog:
     
     def __init__(self, parent=None, tab_number=None):
-        self.root = ttk.Window(themename="yeti")
+        if parent:
+            self.root = ttk.Toplevel(parent)
+        else:
+            self.root = ttk.Window(themename="yeti")
+            
         self.root.title("Карточка сотрудника")
         center_window(self.root, 500, 700)
         
         try:
-            icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "icon.ico")
+            icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "icon.png")
             icon_path = os.path.abspath(icon_path)
-            self.root.iconbitmap(icon_path)
+            icon_img = Image.open(icon_path)
+            self._icon = ImageTk.PhotoImage(icon_img)
+            self.root.iconphoto(True, self._icon)
         except Exception as e:
             print(f"Icon error: {e}")
         
@@ -60,7 +67,8 @@ class EmployeeCardDialog:
         if tab_number:
             self.load_employee(tab_number)
         
-        self.root.mainloop()
+        if not parent:
+            self.root.mainloop()
     
     def setup_ui(self):
         main_frame = ttk.Frame(self.root)

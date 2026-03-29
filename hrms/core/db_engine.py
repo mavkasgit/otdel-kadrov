@@ -533,23 +533,44 @@ class ExcelDatabase:
             used_range = sheet.used_range
             data = used_range.value
             
-            if not data or len(data) < 2:
+            if not data:
                 logger.warning("Order log sheet is empty")
                 return pd.DataFrame(columns=settings.ORDER_LOG_COLUMNS)
             
-            headers = data[0]
-            rows = data[1:]
+            if isinstance(data, list) and len(data) > 0:
+                if isinstance(data[0], str):
+                    data = [data]
+                
+                if len(data) < 2:
+                    logger.warning("Order log sheet has no data rows")
+                    return pd.DataFrame(columns=settings.ORDER_LOG_COLUMNS)
+                else:
+                    headers = data[0]
+                    rows = data[1:]
+                    if len(headers) != len(rows[0]):
+                        logger.warning(f"Header/row mismatch: {len(headers)} headers, {len(rows[0])} cols")
+                        headers = headers[:len(rows[0])]
+            else:
+                return pd.DataFrame(columns=settings.ORDER_LOG_COLUMNS)
             
-            df = pd.DataFrame(rows, columns=headers)
+            try:
+                df = pd.DataFrame(rows, columns=headers)
+            except Exception as e:
+                logger.warning(f"DataFrame creation error: {e}")
+                return pd.DataFrame(columns=settings.ORDER_LOG_COLUMNS)
             
             if "Дата создания" in df.columns:
                 df = self._convert_dates(df, ["Дата создания"])
             
             df = df.where(pd.notna(df), None)
             
-            if order_type and "Тип события" in df.columns:
-                df = df[df["Тип события"] == order_type]
-                logger.debug(f"Filtered by order type: {order_type}, rows: {len(df)}")
+            if order_type and "Тип события" in df.columns and len(df) > 0:
+                try:
+                    mask = df["Тип события"].astype(str).str.strip() == str(order_type).strip()
+                    df = df[mask]
+                    logger.debug(f"Filtered by order type: {order_type}, rows: {len(df)}")
+                except Exception as e:
+                    logger.warning(f"Filter error: {e}, returning all")
             
             logger.info(f"Retrieved {len(df)} order log entries")
             return df
@@ -599,10 +620,12 @@ class ExcelDatabase:
             next_num = 1
         else:
             numbers = []
-            for order_num in df["Номер приказа"]:
-                match = re.match(r'(\d+)-', str(order_num))
-                if match:
-                    numbers.append(int(match.group(1)))
+            if "Номер приказа" in df.columns:
+                for order_num in df["Номер приказа"]:
+                    if pd.notna(order_num):
+                        match = re.search(r'(\d+)', str(order_num))
+                        if match:
+                            numbers.append(int(match.group(1)))
             
             if numbers:
                 next_num = max(numbers) + 1
@@ -671,36 +694,44 @@ class ExcelDatabase:
         """
         from datetime import date
         
+        # 1. Получаем тип и номер приказа
         order_type = order_data.get("order_type")
         if not order_type:
             raise ValueError("order_type is required")
         
         self._get_type_code(order_type)
         
-        search_value = order_data.get("search_value")
+        order_number = order_data.get("Номер приказа") or order_data.get("order_number")
+        if not order_number:
+            order_number = self.get_next_order_number(order_type)
+            
+        # 2. Находим сотрудника
+        search_value = order_data.get("tab_number") or order_data.get("search_value")
         if not search_value:
-            raise ValueError("search_value is required")
+            raise ValueError("search_value or tab_number is required")
         
-        employee = self.find_employee(search_value)
+        employee = self.find_employee(str(search_value))
         if employee is None:
             raise ValueError(f"Сотрудник не найден: {search_value}")
         
-        order_number = self.get_next_order_number(order_type)
+        # 3. Определяем дату и путь к файлу
+        from datetime import date
+        order_date = order_data.get("Дата создания") or order_data.get("order_date") or date.today()
+        file_path = order_data.get("Путь к файлу") or order_data.get("file_path")
         
         sheet = self._get_sheet(settings.SHEET_ORDER_LOG)
         
+        # 4. Запись в журнал
         last_row = sheet.used_range.last_cell.row
         next_row = last_row + 1
-        
-        today = date.today()
         
         new_row = [
             order_number,
             order_type,
-            today,
+            order_date,
             employee.get("ФИО"),
             employee.get("Таб. №"),
-            order_data.get("file_path")
+            file_path
         ]
         
         sheet.range(f"A{next_row}").value = new_row

@@ -8,7 +8,9 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 import xlwings as xw
-from tkinter import Tk, Label, Button, ttk, StringVar, messagebox
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
+from tkinter import StringVar, messagebox
 import settings
 
 

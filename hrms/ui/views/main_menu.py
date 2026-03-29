@@ -9,17 +9,20 @@ import ctypes
 myappid = 'hrms.otdelkadrov'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 import xlwings as xw
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
+import tkinter as tk
 from tkinter import messagebox
+from PIL import Image, ImageTk
 
 from core.db_engine import ExcelDatabase
 from core.analytics import AnalyticsEngine
+from ui.utils import set_app_icon
 import settings
 
 
@@ -48,9 +51,11 @@ class DashboardDialog:
         center_window(self.win, 500, 600)
         
         try:
-            icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "icon.ico")
+            icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "icon.png")
             icon_path = os.path.abspath(icon_path)
-            self.win.iconbitmap(icon_path)
+            icon_img = Image.open(icon_path)
+            self._icon = ImageTk.PhotoImage(icon_img)
+            self.win.iconphoto(True, self._icon)
         except Exception as e:
             print(f"Icon error: {e}")
         
@@ -128,20 +133,25 @@ class MainMenu:
     def __init__(self):
         self.root = ttk.Window(themename="yeti")
         self.root.title("HRMS - Отдел кадров")
-        center_window(self.root, 450, 650)
         
-        try:
-            icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "icon.ico")
-            icon_path = os.path.abspath(icon_path)
-            self.root.iconbitmap(icon_path)
-        except Exception as e:
-            print(f"Icon error: {e}")
+        # Иконка - устанавливаем СРАЗУ после создания окна
+        self._set_icon()
+        
+        center_window(self.root, 450, 650)
         
         self.db = None
         self.analytics = AnalyticsEngine()
         
         self.setup_ui()
         self.root.mainloop()
+    
+    def _set_icon(self):
+        try:
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            ico_path = os.path.join(base_dir, "icon.ico")
+            self.root.iconbitmap(ico_path)
+        except Exception as e:
+            print(f"Icon error: {e}")
     
     def setup_ui(self):
         header = ttk.Frame(self.root, bootstyle="primary", height=80)
@@ -200,22 +210,16 @@ class MainMenu:
         DashboardDialog(self.root)
     
     def open_employees(self):
-        self.root.withdraw()
         from ui.views import employee_card
-        employee_card.EmployeeCardDialog()
-        self.root.deiconify()
+        employee_card.EmployeeCardDialog(parent=self.root)
     
     def open_vacations(self):
-        self.root.withdraw()
         from ui.views import vacation_mgr
-        vacation_mgr.VacationManagerDialog()
-        self.root.deiconify()
+        vacation_mgr.VacationManagerDialog(parent=self.root)
     
     def open_orders(self):
-        self.root.withdraw()
         from ui.views import order_generator
-        order_generator.OrderGeneratorDialog()
-        self.root.deiconify()
+        order_generator.OrderGeneratorDialog(parent=self.root)
     
     def open_settings(self):
         info = f"Excel файл: {settings.EXCEL_FILE}\nПапка отчётов: {settings.REPORTS_DIR}\nПапка логов: {settings.LOGS_DIR}"

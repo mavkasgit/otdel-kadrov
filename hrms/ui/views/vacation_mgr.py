@@ -14,8 +14,10 @@ if project_root not in sys.path:
 
 import xlwings as xw
 import ttkbootstrap as ttk
+from ui.components.date_picker import CustomDateEntry
 from ttkbootstrap.constants import *
-from tkinter import messagebox, StringVar, Listbox
+from tkinter import messagebox, StringVar, Toplevel, LEFT, RIGHT, Y, END, Listbox
+from PIL import Image, ImageTk
 from datetime import datetime
 
 from core.db_engine import ExcelDatabase
@@ -35,20 +37,26 @@ def center_window(window, width, height):
 class VacationManagerDialog:
     
     def __init__(self, parent=None):
-        self.root = ttk.Window(themename="yeti")
+        if parent:
+            self.root = ttk.Toplevel(parent)
+        else:
+            self.root = ttk.Window(themename="yeti")
+            
         self.root.title("Управление отпусками")
-        center_window(self.root, 500, 600)
+        center_window(self.root, 800, 700)
         
         try:
-            icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "icon.ico")
+            icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "icon.png")
             icon_path = os.path.abspath(icon_path)
-            self.root.iconbitmap(icon_path)
+            icon_img = Image.open(icon_path)
+            self._icon = ImageTk.PhotoImage(icon_img)
+            self.root.iconphoto(True, self._icon)
         except Exception as e:
             print(f"Icon error: {e}")
         
         self.db = None
-        self.validator = None
         self.analytics = AnalyticsEngine()
+        self.validator = None
         
         self.employees = []
         self.selected_employee = StringVar()
@@ -56,7 +64,8 @@ class VacationManagerDialog:
         self.setup_ui()
         self.load_employees()
         
-        self.root.mainloop()
+        if not parent:
+            self.root.mainloop()
     
     def setup_ui(self):
         ttk.Label(self.root, text="Отпуска сотрудников", font=("Segoe UI", 14, "bold")).pack(pady=10)
@@ -225,14 +234,12 @@ class AddVacationDialog:
         ttk.Label(self.dialog, text=f"Tab. #: {self.tab_number}").pack(pady=5)
         
         ttk.Label(self.dialog, text="Дата начала:").pack()
-        self.start_entry = ttk.Entry(self.dialog)
+        self.start_entry = CustomDateEntry(self.dialog)
         self.start_entry.pack(pady=5)
-        self.start_entry.insert(0, "01.07.2025")
         
         ttk.Label(self.dialog, text="Дата окончания:").pack()
-        self.end_entry = ttk.Entry(self.dialog)
+        self.end_entry = CustomDateEntry(self.dialog)
         self.end_entry.pack(pady=5)
-        self.end_entry.insert(0, "14.07.2025")
         
         ttk.Label(self.dialog, text="Тип отпуска:").pack()
         self.type_var = StringVar(value="Trudovoj otpusk")

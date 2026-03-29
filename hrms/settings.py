@@ -41,6 +41,9 @@ WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 800
 WINDOW_TITLE = "HRMS - Система управления персоналом"
 
+# Paned window positions
+ORDER_GEN_PANE_POS = None  # Will be saved dynamically
+
 # Excel sheet names
 SHEET_EMPLOYEES = "Сотрудники"
 SHEET_ARCHIVE = "Архив"
