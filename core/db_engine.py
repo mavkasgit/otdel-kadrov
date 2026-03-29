@@ -551,3 +551,21 @@ class ExcelDatabase:
         except Exception as e:
             logger.error(f"Error reading order log: {e}")
             raise DatabaseConnectionError(f"Error reading order log: {str(e)}") from e
+
+    def _get_type_code(self, order_type: str) -> str:
+        """
+        Получение кода типа из справочника
+        
+        Args:
+            order_type: Название типа из справочника
+            
+        Returns:
+            Код типа (2 символа max)
+            
+        Raises:
+            ValueError: Если тип не найден в справочнике
+        """
+        code = settings.ORDER_TYPE_CODES.get(order_type)
+        if code is None:
+            raise ValueError(f"Unknown order type: {order_type}")
+        return code
