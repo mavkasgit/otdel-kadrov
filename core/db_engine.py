@@ -645,3 +645,59 @@ class ExcelDatabase:
         except Exception as e:
             logger.error(f"Error searching employee '{search_value}': {e}")
             return None
+
+    def add_order_log(self, order_data: Dict) -> str:
+        """
+        Добавление записи в журнал приказов
+        
+        Args:
+            order_data: {
+                'order_type': str,      # Обязательно
+                'search_value': str,    # Единое поле поиска (ФИО или Таб.№)
+                'file_path': str        # Опционально
+            }
+            
+        Returns:
+            Номер созданного приказа
+            
+        Raises:
+            ValueError: Если сотрудник не найден или тип события некорректен
+        """
+        from datetime import date
+        
+        order_type = order_data.get("order_type")
+        if not order_type:
+            raise ValueError("order_type is required")
+        
+        self._get_type_code(order_type)
+        
+        search_value = order_data.get("search_value")
+        if not search_value:
+            raise ValueError("search_value is required")
+        
+        employee = self.find_employee(search_value)
+        if employee is None:
+            raise ValueError(f"Сотрудник не найден: {search_value}")
+        
+        order_number = self.get_next_order_number(order_type)
+        
+        sheet = self._get_sheet(settings.SHEET_ORDER_LOG)
+        
+        last_row = sheet.used_range.last_cell.row
+        next_row = last_row + 1
+        
+        today = date.today()
+        
+        new_row = [
+            order_number,
+            order_type,
+            today,
+            employee.get("ФИО"),
+            employee.get("Таб. №"),
+            order_data.get("file_path")
+        ]
+        
+        sheet.range(f"A{next_row}").value = new_row
+        
+        logger.info(f"Added order log entry: {order_number} for {employee.get('ФИО')}")
+        return order_number
