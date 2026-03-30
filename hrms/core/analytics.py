@@ -9,36 +9,30 @@ class AnalyticsEngine:
     Класс для выполнения аналитических расчетов, связанных с данными сотрудников.
     """
 
-    def calculate_age(self, birth_date: date) -> int:
+    def calculate_age(self, birth_date) -> int:
         """
         Рассчитывает возраст сотрудника на сегодняшний день.
-
-        Args:
-            birth_date: Дата рождения сотрудника.
-
-        Returns:
-            Полных лет.
         """
-        if not isinstance(birth_date, (date, datetime)):
+        if not isinstance(birth_date, (date, datetime, pd.Timestamp)):
             return 0
         
         today = date.today()
+        # Приводим к date для сравнения
+        if hasattr(birth_date, 'date'):
+            birth_date = birth_date.date()
+            
         return today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
 
-    def calculate_tenure(self, hire_date: date) -> tuple[int, int]:
+    def calculate_tenure(self, hire_date) -> tuple[int, int]:
         """
         Рассчитывает стаж работы сотрудника в годах и месяцах.
-
-        Args:
-            hire_date: Дата приема на работу.
-
-        Returns:
-            Кортеж (годы, месяцы).
         """
-        if not isinstance(hire_date, (date, datetime)):
+        if not isinstance(hire_date, (date, datetime, pd.Timestamp)):
             return 0, 0
             
         today = date.today()
+        if hasattr(hire_date, 'date'):
+            hire_date = hire_date.date()
         
         years = today.year - hire_date.year
         months = today.month - hire_date.month
@@ -49,37 +43,27 @@ class AnalyticsEngine:
             
         return years, months
 
-    def calculate_contract_days_remaining(self, contract_end: date) -> int:
+    def calculate_contract_days_remaining(self, contract_end) -> int:
         """
         Рассчитывает количество дней до окончания контракта.
-
-        Args:
-            contract_end: Дата окончания контракта.
-
-        Returns:
-            Количество дней. Возвращает отрицательное число, если контракт истек.
         """
-        if not isinstance(contract_end, (date, datetime)):
+        if not isinstance(contract_end, (date, datetime, pd.Timestamp)):
             return 0
 
-        today = date.today()
-        return (contract_end - today).days
+        # Приводим оба значения к pd.Timestamp для корректного вычитания
+        today = pd.Timestamp(date.today())
+        try:
+            target = pd.Timestamp(contract_end)
+            # Убираем часовой пояс если есть для сравнения
+            if target.tzinfo is not None:
+                target = target.tz_convert(None)
+            return (target - today).days
+        except:
+            return 0
 
     def get_contract_alerts(self, employees_df: pd.DataFrame) -> List[Dict]:
         """
         Получает и обрабатывает предупреждения по контрактам.
-
-        - Получает ВСЕ контракты на 2-3 месяца вперед.
-        - Группирует по месяцам (YYYY-MM).
-        - Приоритет HIGH если <= 7 дней, иначе MEDIUM.
-        - ВАЖНО: Красные алерты (HIGH) всегда в самом верху.
-        - Сортировка: сначала HIGH по дате, потом MEDIUM по месяцам.
-
-        Args:
-            employees_df: DataFrame с данными сотрудников.
-
-        Returns:
-            Список словарей с данными по алертам.
         """
         if 'Конец контракта' not in employees_df.columns:
             return []
@@ -94,6 +78,10 @@ class AnalyticsEngine:
         
         alerts_df['Конец контракта'] = pd.to_datetime(alerts_df['Конец контракта'], dayfirst=True)
         
+        # Убираем TZ для сравнения если есть
+        if alerts_df['Конец контракта'].dt.tz is not None:
+            alerts_df['Конец контракта'] = alerts_df['Конец контракта'].dt.tz_localize(None)
+
         alerts_df = alerts_df[
             (alerts_df['Конец контракта'] >= today) &
             (alerts_df['Конец контракта'] <= future_limit)
@@ -121,13 +109,6 @@ class AnalyticsEngine:
     def calculate_vacation_stats(self, employees_df: pd.DataFrame, vacations_df: pd.DataFrame) -> pd.DataFrame:
         """
         Рассчитывает статистику по отпускам для каждого сотрудника.
-
-        Args:
-            employees_df: DataFrame с данными сотрудников.
-            vacations_df: DataFrame с данными об отпусках.
-
-        Returns:
-            DataFrame с колонками: Таб. №, ФИО, Использовано дней, Доступно дней, Осталось дней
         """
         if employees_df.empty:
             return pd.DataFrame(columns=["Таб. №", "ФИО", "Использовано дней", "Доступно дней", "Осталось дней"])
@@ -151,13 +132,6 @@ class AnalyticsEngine:
     def get_upcoming_birthdays(self, employees_df: pd.DataFrame, days_ahead: int = 30) -> List[Dict]:
         """
         Получает список сотрудников с приближающимися днями рождениями.
-
-        Args:
-            employees_df: DataFrame с данными сотрудников.
-            days_ahead: Количество дней для поиска вперед (по умолчанию 30).
-
-        Returns:
-            Список словарей с данными по дням рождения.
         """
         if "Дата рождения" not in employees_df.columns:
             return []
@@ -173,11 +147,21 @@ class AnalyticsEngine:
 
         birthdays = []
         for _, row in employees.iterrows():
-            birth_date = row["Дата рождения"].date()
-            bday_this_year = birth_date.replace(year=today.year)
+            birth_dt = row["Дата рождения"]
+            if birth_dt.tzinfo is not None:
+                birth_dt = birth_dt.tz_convert(None)
+            
+            birth_date = birth_dt.date()
+            try:
+                bday_this_year = birth_date.replace(year=today.year)
+            except ValueError: # 29 февраля
+                bday_this_year = birth_date.replace(year=today.year, month=3, day=1)
 
             if bday_this_year < today:
-                bday_next_year = birth_date.replace(year=today.year + 1)
+                try:
+                    bday_next_year = birth_date.replace(year=today.year + 1)
+                except ValueError:
+                    bday_next_year = birth_date.replace(year=today.year + 1, month=3, day=1)
                 days_until = (bday_next_year - today).days
             else:
                 days_until = (bday_this_year - today).days
@@ -196,12 +180,6 @@ class AnalyticsEngine:
     def get_dashboard_stats(self, employees_df: pd.DataFrame) -> Dict:
         """
         Рассчитывает общую статистику для дашборда.
-
-        Args:
-            employees_df: DataFrame с данными сотрудников.
-
-        Returns:
-            Словарь с различными статистиками.
         """
         if employees_df.empty:
             return {
@@ -220,21 +198,27 @@ class AnalyticsEngine:
 
         ages = []
         for _, row in employees_df.iterrows():
-            if pd.notna(row.get("Дата рождения")):
-                ages.append(self.calculate_age(row["Дата рождения"]))
+            dob = row.get("Дата рождения")
+            if pd.notna(dob):
+                ages.append(self.calculate_age(dob))
         avg_age = sum(ages) / len(ages) if ages else 0
 
         tenure_months_list = []
         for _, row in employees_df.iterrows():
-            if pd.notna(row.get("Дата принятия")):
-                years, months = self.calculate_tenure(row["Дата принятия"])
+            hire = row.get("Дата принятия")
+            if pd.notna(hire):
+                years, months = self.calculate_tenure(hire)
                 tenure_months_list.append(years * 12 + months)
         avg_tenure_months = sum(tenure_months_list) / len(tenure_months_list) if tenure_months_list else 0
 
         contract_status = {"active": 0, "expiring_soon": 0, "expired": 0}
         if "Конец контракта" in employees_df.columns:
-            today = pd.to_datetime(date.today(), dayfirst=True)
+            today = pd.Timestamp(date.today())
             contracts = pd.to_datetime(employees_df["Конец контракта"], errors="coerce", dayfirst=True)
+            # Снимаем TZ
+            if contracts.dt.tz is not None:
+                contracts = contracts.dt.tz_localize(None)
+                
             contract_status["expired"] = int((contracts < today).sum())
             contract_status["expiring_soon"] = int(((contracts >= today) & (contracts <= today + pd.DateOffset(months=1))).sum())
             contract_status["active"] = int(total - contract_status["expired"] - contract_status["expiring_soon"])

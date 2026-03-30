@@ -99,7 +99,7 @@ class OrderGeneratorDialog:
             print(f"Icon error: {e}")
         
         self.db = None
-        self.order_type = StringVar(value="Прием на работу")
+        self.order_type = StringVar(value="") # Сброс по умолчанию
         self.order_number_var = StringVar()
         self.employees_list = []
         self.employee_buttons = {}
@@ -230,7 +230,7 @@ class OrderGeneratorDialog:
             btn.pack(pady=2, fill="x", padx=10)
             self.employee_buttons[ot] = btn
         
-        self.order_type.set("Прием на работу")
+        self.order_type.set("") # Сброс по умолчанию
         self.order_type.trace("w", self.on_type_click)
         
         form_frame = ttk.Frame(right_frame)
@@ -242,12 +242,18 @@ class OrderGeneratorDialog:
             pass
         
         ttk.Label(form_frame, text="Дата приказа:").grid(row=0, column=0, sticky="w", pady=5, padx=10)
-        self.date_entry = CustomDateEntry(form_frame, width=20, popup_coords=(1200 , 600))
+        self.date_entry = CustomDateEntry(form_frame, width=20, popup_coords=(1200 , 600), on_change=self.update_order_number)
         self.date_entry.grid(row=0, column=1, sticky="w", pady=5, padx=10)
         
-        ttk.Label(form_frame, text="Номер:").grid(row=1, column=0, sticky="w", pady=5, padx=10)
-        self.order_number_entry = ttk.Entry(form_frame, textvariable=self.order_number_var, font=("Segoe UI", 11, "bold"), foreground="blue")
-        self.order_number_entry.grid(row=1, column=1, sticky="w", pady=5, padx=10)
+        ttk.Label(form_frame, text="Номер приказа:").grid(row=1, column=0, sticky="w", pady=5, padx=10)
+        
+        # Контейнер для № и самого поля ввода
+        num_entry_frame = ttk.Frame(form_frame)
+        num_entry_frame.grid(row=1, column=1, sticky="w", pady=5, padx=10)
+        
+        ttk.Label(num_entry_frame, text="№", font=("Segoe UI", 11, "bold")).pack(side="left", padx=(0, 2))
+        self.order_number_entry = ttk.Entry(num_entry_frame, textvariable=self.order_number_var, width=15, font=("Segoe UI", 11, "bold"), foreground="blue")
+        self.order_number_entry.pack(side="left")
         
         recent_frame = ttk.LabelFrame(right_frame, text="Последние 5 приказов")
         recent_frame.pack(fill="both", expand=True, pady=10, padx=10)
@@ -280,21 +286,23 @@ class OrderGeneratorDialog:
             self.refresh_employee_list()
             return
         
-        for tab, name in self.employees_list:
-            search_str = f"{int(tab)} {name}".lower()
-            if search_text in search_str:
-                self.employee_listbox.insert("end", f"{int(tab)} - {name}")
+        for name, tab in self.employees_list:
+            search_str = f"{name}" + (f" {tab}" if tab else "")
+            if search_text in search_str.lower():
+                display = name + (f" (т.н. {tab})" if tab else "")
+                self.employee_listbox.insert("end", display)
     
     def on_employee_select(self, event):
         """Выбор сотрудника из списка"""
         selection = self.employee_listbox.curselection()
         if selection:
-            selected = self.employee_listbox.get(selection[0])
-            tab_str = selected.split(" - ")[0]
-            self.selected_employee = int(float(tab_str))
+            idx = selection[0]
+            name = self.employees_list[idx][0]
+            tab = self.employees_list[idx][1]
+            self.selected_employee = name
             
-            name = selected.split(" - ")[1]
-            self.selected_info.config(text=f"Выбран: {int(tab_str)} - {name}", foreground="green")
+            display = name + (f" (т.н. {tab})" if tab else "")
+            self.selected_info.config(text=f"Выбран: {display}", foreground="green")
     
     def on_type_click(self, *args):
         """Выбор типа приказа"""
@@ -316,32 +324,33 @@ class OrderGeneratorDialog:
             
             self.employees_list = []
             for _, row in employees.iterrows():
-                tab_num = row["Таб. №"]
-                if tab_num and not pd.isna(tab_num):
-                    try:
-                        tab_int = int(float(tab_num))
-                        name = row["ФИО"]
-                        if name and not pd.isna(name):
-                            self.employees_list.append((tab_int, name))
-                    except:
-                        pass
+                name = row.get("ФИО")
+                if pd.notna(name) and str(name).strip():
+                    tab_num = row.get("Таб. №")
+                    tab_str = ""
+                    if pd.notna(tab_num):
+                        try:
+                            tab_str = str(int(float(tab_num)))
+                        except:
+                            pass
+                    self.employees_list.append((name, tab_str))
             
-            self.employees_list.sort(key=lambda x: x[1])
+            self.employees_list.sort(key=lambda x: x[0])
             
             self.refresh_employee_list()
             self.update_order_number()
             self.refresh_recent_orders()
             
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"Failed to load employees in order generator: {e}")
             messagebox.showerror("Ошибка", f"Не удалось загрузить:\n{e}")
     
     def refresh_employee_list(self):
         """Обновить список сотрудников"""
         self.employee_listbox.delete(0, "end")
-        for tab, name in self.employees_list:
-            self.employee_listbox.insert("end", f"{int(tab)} - {name}")
+        for name, tab in self.employees_list:
+            display = f"{name}" + (f" (т.н. {tab})" if tab else "")
+            self.employee_listbox.insert("end", display)
     
     def update_order_number(self):
         """Обновить номер приказа"""
@@ -350,10 +359,21 @@ class OrderGeneratorDialog:
             return
         try:
             order_type = self.order_type.get()
-            next_num = self.db.get_next_order_number(order_type)
-            self.order_number_var.set(next_num)
+            if not order_type:
+                self.order_number_var.set("")
+                return
+            
+            # Получаем год из поля даты
+            date_str = self.date_entry.get()
+            try:
+                order_year = datetime.strptime(date_str, "%d.%m.%Y").year
+            except:
+                order_year = datetime.now().year
+                
+            full_num = self.db.get_next_order_number(order_type, year=order_year)
+            self.order_number_var.set(full_num)
         except Exception as e:
-            self.order_number_var.set(f"Ошибка: {e}")
+            self.order_number_var.set("")
     
     def generate_order(self):
         """Создать приказ"""
@@ -366,7 +386,7 @@ class OrderGeneratorDialog:
             return
         
         try:
-            tab_number = self.selected_employee
+            search_value = self.selected_employee
             
             order_date = self.date_entry.entry.get()
             order_date = datetime.strptime(order_date, "%d.%m.%Y")
@@ -378,23 +398,20 @@ class OrderGeneratorDialog:
             
             order_number = self.order_number_var.get()
             
-            employees = self.db.get_employees()
-            emp_matches = employees[employees["Таб. №"] == tab_number]
+            employee = self.db.find_employee(str(search_value))
             
-            if emp_matches.empty:
-                messagebox.showerror("Ошибка", f"Сотрудник с табельным № {tab_number} не найден в базе.")
+            if not employee:
+                messagebox.showerror("Ошибка", f"Сотрудник '{search_value}' не найден в базе.")
                 return
-                
-            emp = emp_matches.iloc[0]
-            emp_dict = emp.to_dict()
+            
+            emp_dict = employee
             
             doc_gen = DocumentGenerator()
             file_path = doc_gen.generate_order(order_type, emp_dict, order_number, order_date)
             
-            # Сохранение лога в Excel
             order_data = {
                 "order_type": order_type,
-                "tab_number": tab_number,
+                "search_value": search_value,
                 "Номер приказа": order_number,
                 "Дата создания": order_date,
                 "Путь к файлу": file_path
@@ -402,11 +419,11 @@ class OrderGeneratorDialog:
             
             self.db.add_order_log(order_data)
             
-            self.status_label.config(text=f"Приказ {order_number} создан")
+            self.status_label.config(text=f"Приказ № {order_number} создан")
             self.update_order_number()
             self.refresh_recent_orders()
             
-            if messagebox.askyesno("Успех", f"Приказ {order_number} успешно создан!\n\nФайл: {file_path}\n\nОткрыть файл сейчас?"):
+            if messagebox.askyesno("Успех", f"Приказ № {order_number} успешно создан!\n\nФайл: {file_path}\n\nОткрыть файл сейчас?"):
                 import os
                 os.startfile(file_path)
             
@@ -432,23 +449,23 @@ class OrderGeneratorDialog:
             recent = df.tail(5).iloc[::-1]
             
             for _, row in recent.iterrows():
-                date_val = row.get("Дата создания")
-                if pd.notna(date_val) and hasattr(date_val, "strftime"):
-                    date_str = date_val.strftime("%d.%m.%Y")
-                else:
-                    date_str = str(date_val) if pd.notna(date_val) else ""
-                    
-                num_str = str(row.get("Номер приказа", ""))
-                type_str = str(row.get("Тип события", ""))
-                fio_str = str(row.get("ФИО", ""))
+                # Извлекаем значения с защитой от изменения названий колонок
+                num_val = row.get("Номер приказа") if "Номер приказа" in row.index else row.iloc[0]
+                type_val = row.get("Тип события") if "Тип события" in row.index else row.iloc[1]
+                date_val = row.get("Дата создания") if "Дата создания" in row.index else row.iloc[2]
+                fio_val = row.get("ФИО") if "ФИО" in row.index else row.iloc[3]
+
+                # Форматируем значения
+                num_str = str(num_val) if pd.notna(num_val) else ""
+                type_str = str(type_val) if pd.notna(type_val) else ""
+                fio_str = str(fio_val) if pd.notna(fio_val) else ""
                 
-                if num_str == "nan": num_str = ""
-                if type_str == "nan": type_str = ""
-                if fio_str == "nan": fio_str = ""
+                # Форматируем дату
+                date_str = date_val.strftime("%d.%m.%Y") if (pd.notna(date_val) and hasattr(date_val, "strftime")) else ""
                 
-                # Format FIO
+                # Форматируем ФИО (Иванов Иван Иванович -> Иванов И.И.)
                 fio_clean = fio_str.strip()
-                if fio_clean:
+                if fio_clean and fio_clean != "None":
                     fio_parts = fio_clean.split()
                     if len(fio_parts) >= 3:
                         fio_str = f"{fio_parts[0]} {fio_parts[1][0]}.{fio_parts[2][0]}."

@@ -49,8 +49,17 @@ SHEET_EMPLOYEES = "Сотрудники"
 SHEET_ARCHIVE = "Архив"
 SHEET_VACATIONS = "Отпуска"
 SHEET_ORDER_LOG = "Журнал событий"
+SHEET_ORDER_LOG_BASE = "Журнал приказов"  # Base name for year-based sheets
 SHEET_SETTINGS = "Настройки"
 SHEET_STAFF_TABLE = "Штатка"  # NOT PRIORITY
+
+
+def get_order_sheet_name(year: int = None) -> str:
+    """Получить имя листа журнала приказов для указанного года"""
+    if year is None:
+        from datetime import datetime
+        year = datetime.now().year
+    return f"{SHEET_ORDER_LOG_BASE} {year}"
 
 # Column mappings (БЕЗ подчеркиваний, с пробелами!)
 EMPLOYEE_COLUMNS = [
@@ -102,6 +111,9 @@ ORDER_LOG_COLUMNS = [
     "Таб. №",
     "Путь к файлу"
 ]
+
+# Ширина колонок для листа журнала приказов (A пустая)
+ORDER_SHEET_COLUMNS = [8.1, 12, 20, 12, 28, 8, 20]
 
 # Order type codes for numbering (e.g., "001-П")
 ORDER_TYPE_CODES = {

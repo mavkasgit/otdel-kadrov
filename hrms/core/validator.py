@@ -31,22 +31,24 @@ class DataValidator:
         Returns:
             Кортеж (is_valid, error_message)
         """
-        required_fields = ["Таб. №", "Дата начала", "Дата окончания", "Тип отпуска"]
+        required_fields = ["Дата начала", "Дата окончания", "Тип отпуска"]
 
         for field in required_fields:
             if field not in vacation_data or vacation_data[field] is None:
                 return False, f"Отсутствует обязательное поле: {field}"
 
-        tab_number = vacation_data.get("Таб. №")
-        if not tab_number:
-            return False, "Не указан табельный номер"
-
-        try:
-            employees = self.db.get_employees()
-            if employees.empty or tab_number not in employees["Таб. №"].values:
-                return False, f"Сотрудник с табельным номером {tab_number} не найден"
-        except Exception as e:
-            logger.warning(f"Could not verify employee: {e}")
+        search_value = vacation_data.get("search_value") or vacation_data.get("ФИО")
+        if not search_value:
+            tab_number = vacation_data.get("Таб. №")
+            if tab_number:
+                employee = self.db.get_employee_by_tab_number(tab_number)
+            else:
+                employee = None
+        else:
+            employee = self.db.find_employee(str(search_value))
+        
+        if not employee:
+            return False, "Сотрудник не найден"
 
         start_date = vacation_data.get("Дата начала")
         end_date = vacation_data.get("Дата окончания")
@@ -183,7 +185,7 @@ class DataValidator:
         Returns:
             Кортеж (is_valid, error_message)
         """
-        required_fields = ["Таб. №", "ФИО"]
+        required_fields = ["ФИО"]
         for field in required_fields:
             if field not in employee_data or not employee_data[field]:
                 return False, f"Отсутствует обязательное поле: {field}"

@@ -97,11 +97,12 @@ class DashboardDialog:
             vac_stats = self.analytics.calculate_vacation_stats(employees, vacations)
             
             # Общая статистика
+            contract_stats = stats.get("contract_status", {})
             for label, value in [
                 ("Всего сотрудников:", stats.get("total_employees", 0)),
                 ("Мужчин:", stats.get("male_count", 0)),
                 ("Женщин:", stats.get("female_count", 0)),
-                ("Контракты истекают:", stats.get("expiring_contracts_30d", 0)),
+                ("Контракты истекают (30д):", contract_stats.get("expiring_soon", 0)),
             ]:
                 row = ttk.Frame(self.stats_frame)
                 row.pack(fill="x", padx=10, pady=3)
@@ -111,17 +112,18 @@ class DashboardDialog:
             # Дни рождения
             if birthdays:
                 for bday in birthdays[:10]:
-                    name = bday.get("FIO", "")
-                    date = bday.get("Data rozhdeniya", "")
-                    if hasattr(date, 'strftime'):
-                        date = date.strftime("%d.%m")
-                    ttk.Label(self.bday_frame, text=f"{name} - {date}").pack(anchor="w", padx=10, pady=2)
+                    name = bday.get("ФИО", "")
+                    date_str = bday.get("Дата рождения", "")
+                    # Дата рождения уже приходит как строка DD.MM.YYYY из get_upcoming_birthdays
+                    if date_str:
+                        date_short = ".".join(date_str.split(".")[:2]) # Только день и месяц
+                        ttk.Label(self.bday_frame, text=f"{name} - {date_short}").pack(anchor="w", padx=10, pady=2)
             else:
                 ttk.Label(self.bday_frame, text="Нет ближайших дней рождения").pack(pady=10)
             
             # Отпуска
-            ttk.Label(self.vac_frame, text=f"В отпуске сейчас: {vac_stats.get('currently_on_vacation', 0)}").pack(anchor="w", padx=10, pady=3)
-            ttk.Label(self.vac_frame, text=f"Запланировано: {vac_stats.get('planned_vacations', 0)}").pack(anchor="w", padx=10, pady=3)
+            ttk.Label(self.vac_frame, text=f"В отпуске сейчас: {vac_stats.get('currently_on_vacation', 0) if isinstance(vac_stats, dict) else 0}").pack(anchor="w", padx=10, pady=3)
+            ttk.Label(self.vac_frame, text=f"Запланировано: {vac_stats.get('planned_vacations', 0) if isinstance(vac_stats, dict) else 0}").pack(anchor="w", padx=10, pady=3)
             
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось загрузить данные:\n{e}")

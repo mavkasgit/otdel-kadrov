@@ -10,17 +10,24 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from settings import ensure_directories
-from ui.views.main_menu import MainMenu
-
 
 def main():
     """Запуск главного меню"""
-    ensure_directories()
+    try:
+        from settings import ensure_directories
+        ensure_directories()
+    except Exception as e:
+        print(f"Ошибка при инициализации: {e}")
+        import traceback
+        traceback.print_exc()
+        input("Нажми Enter для выхода...")
+        return
     
     try:
+        from ui.views.main_menu import MainMenu
         app = MainMenu()
     except Exception as e:
+        print(f"Ошибка при запуске приложения: {e}")
         import traceback
         traceback.print_exc()
         input("Нажми Enter для выхода...")

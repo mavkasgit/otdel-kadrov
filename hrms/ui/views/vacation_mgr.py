@@ -23,7 +23,9 @@ from datetime import datetime
 from core.db_engine import ExcelDatabase
 from core.validator import DataValidator
 from core.analytics import AnalyticsEngine
+from core.logger import logger
 import settings
+import pandas as pd
 
 
 def center_window(window, width, height):
@@ -57,6 +59,7 @@ class VacationManagerDialog:
         self.db = None
         self.analytics = AnalyticsEngine()
         self.validator = None
+        self.full_employees_list = []
         
         self.employees = []
         self.selected_employee = StringVar()
@@ -70,16 +73,19 @@ class VacationManagerDialog:
     def setup_ui(self):
         ttk.Label(self.root, text="Отпуска сотрудников", font=("Segoe UI", 14, "bold")).pack(pady=10)
         
-        ttk.Label(self.root, text="Выберите сотрудника:").pack(pady=5)
-        self.employee_combo = ttk.Combobox(self.root, textvariable=self.selected_employee, 
-                                           state="readonly", width=40)
-        self.employee_combo.pack(pady=5)
-        self.employee_combo.bind("<<ComboboxSelected>>", self.on_employee_selected)
+        # Поиск сотрудника
+        ttk.Label(self.root, text="Поиск сотрудника (имя или таб. №):").pack(pady=(5, 0))
+        self.search_query = StringVar()
+        self.search_query.trace_add("write", self.filter_employees)
+        self.search_entry = ttk.Entry(self.root, textvariable=self.search_query, width=50)
+        self.search_entry.pack(pady=5)
         
-        ttk.Button(self.root, text="Показать отпуска", command=self.show_vacations,
-               bootstyle=INFO, padding=10).pack(pady=10)
+        # Список результатов
+        self.employee_listbox = Listbox(self.root, height=6, width=60)
+        self.employee_listbox.pack(pady=5)
+        self.employee_listbox.bind("<<ListboxSelect>>", self.on_employee_selected)
         
-        ttk.Label(self.root, text="Список отпусков:").pack(pady=5)
+        ttk.Label(self.root, text="Список отпусков:").pack(pady=(10, 5))
         
         scroll = ttk.Scrollbar(self.root)
         scroll.pack(side=RIGHT, fill=Y)
@@ -104,22 +110,56 @@ class VacationManagerDialog:
     
     def load_employees(self):
         try:
-            try:
-                wb = xw.Book.caller()
-            except:
-                wb = xw.Book(settings.EXCEL_FILE)
-            
-            self.db = ExcelDatabase()
-            self.db.connect()
-            self.validator = DataValidator(self.db)
+            if self.db is None:
+                try:
+                    wb = xw.Book.caller()
+                except:
+                    wb = xw.Book(settings.EXCEL_FILE)
+                
+                self.db = ExcelDatabase()
+                self.db.connect()
+                self.validator = DataValidator(self.db)
             
             employees = self.db.get_employees()
-            self.employees = [(row["Tab. #"], row["FIO"]) for _, row in employees.iterrows()]
             
-            self.employee_combo["values"] = [f"{tab} - {name}" for tab, name in self.employees]
+            self.full_employees_list = []
+            for _, row in employees.iterrows():
+                name = row.get("ФИО")
+                if pd.notna(name) and str(name).strip():
+                    tab_num = row.get("Таб. №")
+                    tab_str = ""
+                    if pd.notna(tab_num):
+                        try:
+                            tab_str = str(int(float(tab_num)))
+                        except:
+                            pass
+                    self.full_employees_list.append((name, tab_str))
+            
+            self.full_employees_list.sort(key=lambda x: x[0])
+            self.refresh_employee_list(self.full_employees_list)
             
         except Exception as e:
-            messagebox.showerror("Oshibka", f"Ne udalos zagruzit sotrudnikov:\n{e}")
+            logger.exception(f"Failed to load employees in vacation manager")
+            messagebox.showerror("Ошибка", f"Не удалось загрузить сотрудников:\n{e}")
+    
+    def refresh_employee_list(self, employees):
+        self.employee_listbox.delete(0, END)
+        self.current_display_list = employees
+        for name, tab in employees:
+            display = f"{name}" + (f" (т.н. {tab})" if tab else "")
+            self.employee_listbox.insert(END, display)
+            
+    def filter_employees(self, *args):
+        query = self.search_query.get().lower()
+        if not query:
+            self.refresh_employee_list(self.full_employees_list)
+            return
+            
+        filtered = [
+            (name, tab) for name, tab in self.full_employees_list
+            if query in name.lower() or (tab and query in tab)
+        ]
+        self.refresh_employee_list(filtered)
     
     def on_employee_selected(self, event):
         self.show_vacations()
@@ -127,100 +167,134 @@ class VacationManagerDialog:
     def show_vacations(self):
         self.vacations_listbox.delete(0, END)
         
-        if not self.selected_employee.get():
+        selection = self.employee_listbox.curselection()
+        if not selection:
             return
         
-        tab_str = self.selected_employee.get().split(" - ")[0]
-        tab_number = int(tab_str)
+        selected_name = self.current_display_list[selection[0]][0]
+        employee = self.db.find_employee(selected_name)
+        
+        if not employee:
+            self.vacations_listbox.insert(0, "Сотрудник не найден")
+            return
+        
+        tab_number = employee.get("Таб. №")
+        if pd.isna(tab_number):
+            tab_number = None
         
         try:
             vacations = self.db.get_vacations(tab_number)
             
             if vacations.empty:
-                self.vacations_listbox.insert(0, "Net otpuskov")
+                self.vacations_listbox.insert(0, "Нет отпусков")
                 return
             
             for _, vac in vacations.iterrows():
-                start = vac.get("Data nachala", "")
-                end = vac.get("Data okonchaniya", "")
-                days = vac.get("Kolichestvo dnej", 0)
-                vtype = vac.get("Tip otpuska", "")
+                start = vac.get("Дата начала")
+                end = vac.get("Дата окончания")
+                days = vac.get("Количество дней", 0)
+                vtype = vac.get("Тип отпуска", "")
                 
-                if isinstance(start, datetime):
-                    start = start.strftime("%d.%m.%Y")
-                if isinstance(end, datetime):
-                    end = end.strftime("%d.%m.%Y")
+                # Форматируем даты если они есть
+                start_str = start.strftime("%d.%m.%Y") if pd.notna(start) else "-"
+                end_str = end.strftime("%d.%m.%Y") if pd.notna(end) else "-"
                 
-                text = f"{start} - {end} ({days} dn.) - {vtype}"
-                self.vacations_listbox.insert(END, text)
+                display_text = f"{start_str} - {end_str} ({days} дн.) [{vtype}]"
+                self.vacations_listbox.insert(END, display_text)
             
+            # Статистика
             all_vac = self.db.get_vacations()
-            emp_vac = all_vac[all_vac["Tab. #"] == tab_number]
-            total_days = emp_vac["Kolichestvo dnej"].sum() if not emp_vac.empty else 0
+            if tab_number is not None:
+                emp_vac = all_vac[all_vac["Таб. №"] == tab_number]
+            else:
+                emp_vac = all_vac[all_vac["ФИО"] == selected_name]
+            total_days = int(emp_vac["Количество дней"].sum()) if not emp_vac.empty else 0
             remaining = 28 - total_days
             
-            self.status_label.config(text=f"Ispolzovano: {total_days} dn. Ostalos: {remaining} dn.")
+            self.status_label.config(text=f"Использовано: {total_days} дн. Осталось: {remaining} дн.")
             
         except Exception as e:
-            messagebox.showerror("Oshibka", f"Ne udalos zagruzit otpusta:\n{e}")
+            logger.exception(f"Failed to show vacations for tab number {tab_number}")
+            messagebox.showerror("Ошибка", f"Не удалось загрузить отпуска:\n{e}")
     
     def add_vacation(self):
-        if not self.selected_employee.get():
-            messagebox.showwarning("Vnimanie", "Viberite sotrudnika")
+        selection = self.employee_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("Внимание", "Выберите сотрудника")
             return
         
-        tab_str = self.selected_employee.get().split(" - ")[0]
-        tab_number = int(tab_str)
+        selected_name = self.current_display_list[selection[0]][0]
+        employee = self.db.find_employee(selected_name)
         
-        dialog = AddVacationDialog(self.root, tab_number)
+        if not employee:
+            messagebox.showerror("Ошибка", "Сотрудник не найден")
+            return
+        
+        tab_number = employee.get("Таб. №")
+        if pd.notna(tab_number):
+            tab_number = int(float(tab_number))
+        else:
+            tab_number = None
+        
+        dialog = AddVacationDialog(self.root, tab_number, selected_name)
         if dialog.result:
             vac_data = dialog.result
             
             if self.validator:
                 is_valid, error = self.validator.validate_vacation_data(vac_data)
                 if not is_valid:
-                    messagebox.showerror("Oshibka validacii", error)
+                    messagebox.showerror("Ошибка валидации", error)
                     return
                 
-                start = vac_data["Data nachala"]
-                end = vac_data["Data okonchaniya"]
-                has_overlap, overlaps = self.validator.check_vacation_overlap(
-                    tab_number, start, end
-                )
-                
-                if has_overlap:
-                    msg = "Vnimanie! Peresechenie s sushestvuyushchimi otpuskami:\n"
-                    for ov in overlaps:
-                        msg += f"- {ov['start']} - {ov['end']}\n"
-                    msg += "\nVsyo ravno dobavit?"
-                    if not messagebox.askyesno("Peresechenie", msg):
-                        return
+                start = vac_data["Дата начала"]
+                end = vac_data["Дата окончания"]
+                if tab_number:
+                    has_overlap, overlaps = self.validator.check_vacation_overlap(
+                        tab_number, start, end
+                    )
+                    
+                    if has_overlap:
+                        msg = "Внимание! Пересечение с существующими отпусками:\n"
+                        for ov in overlaps:
+                            msg += f"- {ov['start']} - {ov['end']}\n"
+                        msg += "\nВсё равно добавить?"
+                        if not messagebox.askyesno("Пересечение", msg):
+                            return
             
             try:
-                self.db.add_vacation(vac_data)
-                messagebox.showinfo("Uspeshno", "Otpust dobavlen!")
+                db_vac_data = {
+                    "search_value": selected_name,
+                    "Дата начала": vac_data["Дата начала"],
+                    "Дата окончания": vac_data["Дата окончания"],
+                    "Тип отпуска": vac_data["Тип отпуска"],
+                    "Количество дней": vac_data["Количество дней"]
+                }
+                self.db.add_vacation(db_vac_data)
+                messagebox.showinfo("Успешно", "Отпуск добавлен!")
                 self.show_vacations()
             except Exception as e:
-                messagebox.showerror("Oshibka", f"Ne udalos dobavit otpusk:\n{e}")
+                messagebox.showerror("Ошибка", f"Не удалось добавить отпуск:\n{e}")
     
     def delete_vacation(self):
-        if not self.selected_employee.get():
+        selection = self.employee_listbox.curselection()
+        if not selection:
             return
         
         selection = self.vacations_listbox.curselection()
         if not selection:
-            messagebox.showwarning("Vnimanie", "Viberite otpusk dlya udaleniya")
+            messagebox.showwarning("Внимание", "Выберите отпуск для удаления")
             return
         
-        if messagebox.askyesno("Podtverzhdenie", "Udalit vbrannyj otpusk?"):
-            messagebox.showinfo("Info", "Funkciya v razrabotke")
+        if messagebox.askyesno("Подтверждение", "Удалить выбранный отпуск?"):
+            messagebox.showinfo("Инфо", "Функция в разработке")
 
 
 class AddVacationDialog:
     
-    def __init__(self, parent, tab_number):
+    def __init__(self, parent, tab_number, fio=None):
         self.result = None
         self.tab_number = tab_number
+        self.fio = fio
         
         self.dialog = Toplevel(parent)
         self.dialog.title("Добавить отпуск")
@@ -231,7 +305,10 @@ class AddVacationDialog:
         self.dialog.wait_window()
     
     def setup_ui(self):
-        ttk.Label(self.dialog, text=f"Tab. #: {self.tab_number}").pack(pady=5)
+        if self.fio:
+            ttk.Label(self.dialog, text=f"Сотрудник: {self.fio}").pack(pady=5)
+        if self.tab_number:
+            ttk.Label(self.dialog, text=f"Таб. №: {self.tab_number}").pack(pady=5)
         
         ttk.Label(self.dialog, text="Дата начала:").pack()
         self.start_entry = CustomDateEntry(self.dialog)
@@ -242,8 +319,8 @@ class AddVacationDialog:
         self.end_entry.pack(pady=5)
         
         ttk.Label(self.dialog, text="Тип отпуска:").pack()
-        self.type_var = StringVar(value="Trudovoj otpusk")
-        types = ["Trudovoj otpusk", "Otpusk za svoj schyot", "Uchebnyj otpusk", "Dekretnyj"]
+        self.type_var = StringVar(value="Ежегодный отпуск")
+        types = ["Ежегодный отпуск", "Отпуск без сохранения з/п", "Учебный отпуск", "Больничный"]
         
         for t in types:
             ttk.Radiobutton(self.dialog, text=t, variable=self.type_var, value=t).pack()
@@ -267,17 +344,17 @@ class AddVacationDialog:
             days = (end_date - start_date).days + 1
             
             self.result = {
-                "Tab. #": self.tab_number,
-                "Data nachala": start_date,
-                "Data okonchaniya": end_date,
-                "Tip otpuska": self.type_var.get(),
-                "Kolichestvo dnej": days
+                "Таб. №": self.tab_number,
+                "Дата начала": start_date,
+                "Дата окончания": end_date,
+                "Тип отпуска": self.type_var.get(),
+                "Количество дней": days
             }
             
             self.dialog.destroy()
             
         except ValueError as e:
-            messagebox.showerror("Oshibka", "Nevernyj format daty. Ispolzujte DD.MM.GGGG")
+            messagebox.showerror("Ошибка", "Неверный формат даты. Используйте ДД.ММ.ГГГГ")
 
 
 def main():

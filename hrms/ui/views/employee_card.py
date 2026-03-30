@@ -15,13 +15,15 @@ if project_root not in sys.path:
 import xlwings as xw
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
-from tkinter import messagebox, StringVar
+from tkinter import messagebox, StringVar, Listbox, END
 from PIL import Image, ImageTk
 from datetime import datetime
 
 from core.db_engine import ExcelDatabase
 from core.analytics import AnalyticsEngine
+from core.logger import logger
 import settings
+import pandas as pd
 
 
 def center_window(window, width, height):
@@ -61,6 +63,7 @@ class EmployeeCardDialog:
         self.analytics = AnalyticsEngine()
         self.tab_number = tab_number
         self.employee_data = None
+        self.full_employees_list = []
         
         self.setup_ui()
         
@@ -79,22 +82,29 @@ class EmployeeCardDialog:
         self.header_label.pack(pady=10)
         
         if self.tab_number is None:
-            ttk.Label(main_frame, text="Выберите сотрудника:").pack(pady=5)
-            self.employee_var = StringVar()
-            self.employee_combo = ttk.Combobox(main_frame, textvariable=self.employee_var,
-                                               state="readonly", width=40)
-            self.employee_combo.pack(pady=5)
-            self.employee_combo.bind("<<ComboboxSelected>>", self.on_employee_selected)
-            ttk.Button(main_frame, text="Загрузить", command=self.load_selected_employee,
-                      bootstyle=INFO).pack(pady=5)
+            # Поиск сотрудника
+            ttk.Label(main_frame, text="Поиск сотрудника (имя или таб. №):").pack(pady=(10, 0))
+            self.search_query = StringVar()
+            self.search_query.trace_add("write", self.filter_employees)
+            self.search_entry = ttk.Entry(main_frame, textvariable=self.search_query, width=50)
+            self.search_entry.pack(pady=5)
+            
+            # Список результатов (вместо выпадающего списка)
+            self.employee_listbox = Listbox(main_frame, height=6, width=60)
+            self.employee_listbox.pack(pady=5)
+            self.employee_listbox.bind("<<ListboxSelect>>", self.on_employee_selected)
+            
             self.load_employee_list()
         
         self.info_frame = ttk.LabelFrame(main_frame, text="Основная информация")
         self.info_frame.pack(fill="x", pady=10)
         
         self.info_labels = {}
-        fields = ["Tab. #", "FIO", "Podrazdelenie", "Dolzhnost", "Data priyatiya", 
-                  "Data rozhdeniya", "Pol", "Grazhdanin RB", "Rezident RB", "Pensioner"]
+        # Список полей на русском языке для соответствия settings.py
+        fields = [
+            "Таб. №", "ФИО", "Подразделение", "Должность", "Дата принятия", 
+            "Дата рождения", "Пол", "Гражданин РБ", "Резидент РБ", "Пенсионер"
+        ]
         
         for i, field in enumerate(fields):
             ttk.Label(self.info_frame, text=f"{field}:", font=("Segoe UI", 10, "bold")).grid(
@@ -165,34 +175,6 @@ class EmployeeCardDialog:
     
     def load_employee_list(self):
         try:
-            try:
-                wb = xw.Book.caller()
-            except:
-                wb = xw.Book(settings.EXCEL_FILE)
-            
-            self.db = ExcelDatabase()
-            self.db.connect()
-            
-            employees = self.db.get_employees()
-            self.employees_list = [(row["Tab. #"], row["FIO"]) for _, row in employees.iterrows()]
-            
-            self.employee_combo["values"] = [f"{tab} - {name}" for tab, name in self.employees_list]
-            
-        except Exception as e:
-            messagebox.showerror("Oshibka", f"Ne udalos zagruzit sotrudnikov:\n{e}")
-    
-    def on_employee_selected(self, event):
-        self.load_selected_employee()
-    
-    def load_selected_employee(self):
-        if not self.employee_var.get():
-            return
-        
-        tab_str = self.employee_var.get().split(" - ")[0]
-        self.load_employee(int(tab_str))
-    
-    def load_employee(self, tab_number):
-        try:
             if self.db is None:
                 try:
                     wb = xw.Book.caller()
@@ -203,84 +185,161 @@ class EmployeeCardDialog:
                 self.db.connect()
             
             employees = self.db.get_employees()
-            emp = employees[employees["Tab. #"] == tab_number]
             
-            if emp.empty:
-                messagebox.showerror("Oshibka", "Sotrudnik ne najden")
+            self.full_employees_list = []
+            for _, row in employees.iterrows():
+                name = row.get("ФИО")
+                if pd.notna(name) and str(name).strip():
+                    tab_num = row.get("Таб. №")
+                    tab_str = ""
+                    if pd.notna(tab_num):
+                        try:
+                            tab_str = str(int(float(tab_num)))
+                        except:
+                            pass
+                    self.full_employees_list.append((name, tab_str))
+            
+            self.full_employees_list.sort(key=lambda x: x[0])
+            self.refresh_employee_list(self.full_employees_list)
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось загрузить сотрудников:\n{e}")
+    
+    def refresh_employee_list(self, employees):
+        self.employee_listbox.delete(0, END)
+        self.current_display_list = employees
+        for name, tab in employees:
+            display = f"{name}" + (f" (т.н. {tab})" if tab else "")
+            self.employee_listbox.insert(END, display)
+    
+    def filter_employees(self, *args):
+        query = self.search_query.get().lower()
+        if not query:
+            self.refresh_employee_list(self.full_employees_list)
+            return
+            
+        filtered = [
+            (name, tab) for name, tab in self.full_employees_list
+            if query in name.lower() or (tab and query in tab)
+        ]
+        self.refresh_employee_list(filtered)
+    
+    def on_employee_selected(self, event):
+        selection = self.employee_listbox.curselection()
+        if not selection:
+            return
+        
+        selected_name = self.current_display_list[selection[0]][0]
+        self.load_employee(selected_name)
+    
+    def load_selected_employee(self):
+        selection = self.employee_listbox.curselection()
+        if not selection:
+            return
+        
+        selected_name = self.current_display_list[selection[0]][0]
+        self.load_employee(selected_name)
+    
+    def load_employee(self, search_value):
+        try:
+            if self.db is None:
+                try:
+                    wb = xw.Book.caller()
+                except:
+                    wb = xw.Book(settings.EXCEL_FILE)
+                
+                self.db = ExcelDatabase()
+                self.db.connect()
+            
+            employee = self.db.find_employee(str(search_value))
+            
+            if not employee:
+                messagebox.showerror("Ошибка", "Сотрудник не найден")
                 return
             
-            self.employee_data = emp.iloc[0]
-            self.tab_number = tab_number
+            self.employee_data = employee
+            self.tab_number = employee.get("Таб. №")
+            if pd.notna(self.tab_number):
+                self.tab_number = int(float(self.tab_number))
+            else:
+                self.tab_number = None
             
-            self.header_label.config(text=f"Karto4ka: {self.employee_data.get('FIO', '')}")
+            self.header_label.config(text=f"Карточка: {self.employee_data.get('ФИО', '')}")
             
-            fields = ["Tab. #", "FIO", "Podrazdelenie", "Dolzhnost", "Data priyatiya", 
-                      "Data rozhdeniya", "Pol", "Grazhdanin RB", "Rezident RB", "Pensioner"]
+            # Поля из settings.EMPLOYEE_COLUMNS
+            fields = [
+                "Таб. №", "ФИО", "Подразделение", "Должность", "Дата принятия", 
+                "Дата рождения", "Пол", "Гражданин РБ", "Резидент РБ", "Пенсионер"
+            ]
             
             for field in fields:
                 value = self.employee_data.get(field, "-")
-                if isinstance(value, datetime):
-                    value = value.strftime("%d.%m.%Y")
+                if pd.notna(value):
+                    if hasattr(value, 'strftime'):
+                        value = value.strftime("%d.%m.%Y")
+                else:
+                    value = "-"
                 self.info_labels[field].config(text=str(value))
             
-            contract_start = self.employee_data.get("Na4alo kontrakta")
-            contract_end = self.employee_data.get("Konec kontrakta")
+            contract_start = self.employee_data.get("Начало контракта")
+            contract_end = self.employee_data.get("Конец контракта")
             
-            if isinstance(contract_start, datetime):
+            if pd.notna(contract_start):
                 self.contract_start.config(text=contract_start.strftime("%d.%m.%Y"))
             else:
                 self.contract_start.config(text="-")
             
-            if isinstance(contract_end, datetime):
+            if pd.notna(contract_end):
                 self.contract_end.config(text=contract_end.strftime("%d.%m.%Y"))
                 days_left = self.analytics.calculate_contract_days_remaining(contract_end)
                 
                 if days_left < 0:
-                    self.contract_days.config(text=f"Istek {abs(days_left)} dn. nazad", fg="red")
+                    self.contract_days.config(text=f"Истек {abs(days_left)} дн. назад", foreground="red")
                 elif days_left <= 30:
-                    self.contract_days.config(text=f"{days_left} dn.", fg="orange")
+                    self.contract_days.config(text=f"{days_left} дн.", foreground="orange")
                 else:
-                    self.contract_days.config(text=f"{days_left} dn.", fg="green")
+                    self.contract_days.config(text=f"{days_left} дн.", foreground="green")
             else:
                 self.contract_end.config(text="-")
                 self.contract_days.config(text="-")
             
-            birth_date = self.employee_data.get("Data rozhdeniya")
-            hire_date = self.employee_data.get("Data priyatiya")
+            birth_date = self.employee_data.get("Дата рождения")
+            hire_date = self.employee_data.get("Дата принятия")
             
-            if isinstance(birth_date, datetime):
-                age = self.analytics.calculate_age(birth_date)
-                self.age_label.config(text=f"{age} let")
+            if pd.notna(birth_date):
+                self.age_label.config(text=f"{self.analytics.calculate_age(birth_date)} лет")
             else:
                 self.age_label.config(text="-")
             
-            if isinstance(hire_date, datetime):
+            if pd.notna(hire_date):
                 years, months = self.analytics.calculate_tenure(hire_date)
-                self.tenure_label.config(text=f"{years} let, {months} mes.")
+                self.tenure_label.config(text=f"{years} лет, {months} мес.")
             else:
                 self.tenure_label.config(text="-")
             
-            vacations = self.db.get_vacations(tab_number)
+            vacations = self.db.get_vacations(self.tab_number)
+            used = 0
             if not vacations.empty:
-                used = vacations["Kolichestvo dnej"].sum()
-            else:
-                used = 0
+                used = vacations["Количество дней"].sum()
+                if float(used).is_integer():
+                    used = int(used)
             
-            self.vacation_used.config(text=f"{used} dn.")
+            self.vacation_used.config(text=f"{used} дн.")
             remaining = 28 - used
-            self.vacation_remain.config(text=f"{remaining} dn.", 
-                                       fg="green" if remaining > 0 else "red")
+            if float(remaining).is_integer():
+                remaining = int(remaining)
+            self.vacation_remain.config(text=f"{remaining} дн.", 
+                                       foreground="green" if remaining > 0 else "red")
             
         except Exception as e:
-            messagebox.showerror("Oshibka", f"Ne udalos zagruzit dannye:\n{e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"Failed to load employee data: {e}")
+            messagebox.showerror("Ошибка", f"Не удалось загрузить данные:\n{e}")
     
     def edit_employee(self):
-        messagebox.showinfo("Informaciya", "Funkciya v razrabotke")
+        messagebox.showinfo("Информация", "Функция в разработке")
     
     def create_order(self):
-        messagebox.showinfo("Informaciya", "Funkciya v razrabotke")
+        messagebox.showinfo("Информация", "Функция в разработке")
 
 
 def main():
